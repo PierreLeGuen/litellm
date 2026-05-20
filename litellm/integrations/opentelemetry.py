@@ -1675,6 +1675,14 @@ class OpenTelemetry(OTELGenAISemconvMixin, CustomLogger):
                 value=guardrail_information.get("guardrail_status"),
             )
 
+            # Provider's raw top-level action (e.g. Bedrock's
+            # ``GUARDRAIL_INTERVENED`` / ``NONE``). Populated by the provider
+            # hook onto StandardLoggingGuardrailInformation so this integration
+            # stays provider-agnostic — we only read a normalised string.
+            guardrail_action = guardrail_information.get("guardrail_action")
+            if guardrail_action:
+                guardrail_span.set_attribute("guardrail_action", guardrail_action)
+
             # The provider hook (e.g. Bedrock) extracts violation_categories
             # from the raw response BEFORE redaction and stamps them onto
             # StandardLoggingGuardrailInformation. Surfacing them here as a

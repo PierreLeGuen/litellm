@@ -517,6 +517,13 @@ class BedrockGuardrail(CustomGuardrail, BaseAWSLLM):
         tracing_detail: GuardrailTracingDetail = {}
         if violation_categories:
             tracing_detail["violation_categories"] = violation_categories
+        # Bedrock's top-level ``action`` field ("GUARDRAIL_INTERVENED" or
+        # "NONE") goes onto the tracing detail so the OTEL integration can
+        # expose it as a queryable span attribute without re-parsing the
+        # redacted guardrail_response blob.
+        bedrock_action = _json_response.get("action")
+        if isinstance(bedrock_action, str):
+            tracing_detail["guardrail_action"] = bedrock_action
 
         # Raw Bedrock JSON is passed here; match/regex redaction runs once inside
         # CustomGuardrail.add_standard_logging_guardrail_information_to_request_data.

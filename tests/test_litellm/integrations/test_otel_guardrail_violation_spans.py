@@ -99,6 +99,7 @@ def _slg_entry(
     start=1.0,
     end=2.0,
     violation_categories=None,
+    guardrail_action=None,
 ):
     """Build a StandardLoggingGuardrailInformation entry the way
     ``add_standard_logging_guardrail_information_to_request_data`` does."""
@@ -114,6 +115,8 @@ def _slg_entry(
     }
     if violation_categories is not None:
         entry["violation_categories"] = violation_categories
+    if guardrail_action is not None:
+        entry["guardrail_action"] = guardrail_action
     return entry
 
 
@@ -432,6 +435,45 @@ class TestGuardrailSpanAttributesOnViolation(unittest.TestCase):
         )
         span = self._emit_and_get_guardrail_span(entry)
         self.assertIsNone(_attr(span, "guardrail_violation_categories"))
+
+    def test_guardrail_action_surfaced_when_provider_populates_it(self):
+        """The provider hook (e.g. Bedrock) writes its raw top-level
+        ``action`` string onto StandardLoggingGuardrailInformation as
+        ``guardrail_action``. OTEL must expose it as a queryable span
+        attribute so dashboards can pivot on the raw provider verdict
+        (Bedrock ``GUARDRAIL_INTERVENED`` / ``NONE``) without parsing
+        the redacted guardrail_response blob."""
+        entry = _slg_entry(
+            "guardrail_intervened",
+            _bedrock_block_response(),
+            guardrail_action="GUARDRAIL_INTERVENED",
+        )
+        span = self._emit_and_get_guardrail_span(entry)
+        self.assertEqual(
+            _attr(span, "guardrail_action"),
+            "GUARDRAIL_INTERVENED",
+            "guardrail_action must be exposed as a top-level span attribute",
+        )
+
+    def test_guardrail_action_surfaced_for_allowed_request(self):
+        """Even on the success path, the provider's raw action (e.g.
+        Bedrock ``NONE``) should be queryable so dashboards can group
+        allowed-vs-blocked counts off the same attribute."""
+        entry = _slg_entry(
+            "success",
+            {"action": "NONE", "assessments": []},
+            guardrail_action="NONE",
+        )
+        span = self._emit_and_get_guardrail_span(entry)
+        self.assertEqual(_attr(span, "guardrail_action"), "NONE")
+
+    def test_no_guardrail_action_when_field_absent(self):
+        """If the provider didn't populate the field (older payloads,
+        non-Bedrock providers without a top-level action), don't emit
+        an empty attribute."""
+        entry = _slg_entry("success", {"action": "NONE", "assessments": []})
+        span = self._emit_and_get_guardrail_span(entry)
+        self.assertIsNone(_attr(span, "guardrail_action"))
 
 
 class TestMultipleGuardrailsOneBlocks(unittest.TestCase):
